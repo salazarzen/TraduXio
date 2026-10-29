@@ -1,0 +1,6 @@
+# Shell scripts must keep LF endings. They are executed inside Linux
+# containers (see spec/Dockerfile and compose.yml), and a CRLF shebang makes
+# the kernel fail with a confusing "no such file or directory" on the
+# interpreter rather than the script. With core.autocrlf=true on Windows these
+# files would otherwise be checked out as CRLF.
+*.sh text eol=lf

@@ -271,7 +271,12 @@ function(work, req) {
   }
   return [work, {code:code,body:JSON.stringify(result)}];
 
-}
+  // NOTE: the helper functions below are declared inside this handler, not
+  // at the top level of the file. CouchDB evaluates the stored source
+  // wrapped in parentheses, so trailing top-level declarations turned the
+  // whole handler into a syntax error on modern SpiderMonkey ("function
+  // statement requires a name"). SpiderMonkey 1.8.5, shipped with CouchDB
+  // 1.x, accepted it, so this only surfaced on 3.x.
 
 function adjustLength(work) {
   var l=textLength(work);
@@ -317,4 +322,5 @@ function expandText(text,l) {
     text.push("");
   }
   return text;
+}
 }

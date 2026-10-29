@@ -1,1 +1,13 @@
 .rspec-stats
+
+# Credentials and generated config. These are created from the *.default /
+# *.example templates by the installation procedure in README.md and must not
+# be committed. Only couchdb/.couchapprc was previously ignored (in
+# couchdb/.gitignore), which left the other three exposed.
+couchdb-admin.env
+couchdb-admin-password
+node/node_config.json
+couchdb/couchapp.json
+
+# Written by deploy.sh into the working directory.
+deploy.log

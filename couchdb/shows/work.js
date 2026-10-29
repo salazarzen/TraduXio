@@ -19,8 +19,8 @@ function(o, req) {
   function getTextLength() {
     if (o.text)
       return o.text.length;
-    for each (var version in o.translations)
-      return version.text.length;
+    for (var versionId in o.translations)
+      return o.translations[versionId].text.length;
   }
 
   var newWork = false;

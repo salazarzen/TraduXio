@@ -1,75 +1,135 @@
 name: TraduXio-test
+
+# TraduXio on CouchDB 3.5.3.
+#
+# Upgraded from CouchDB 1.7.1. The couchapp needed four small code fixes to
+# run on a modern query server (two SpiderMonkey incompatibilities and a
+# vendored jquery.couch.js, since 2.0 removed the /_utils copy), plus the
+# configuration translation annotated in couchdb-custom.ini.
+#
+# Before the first start, create the data directories:
+#
+#   sudo mkdir -p /home/couchdb/3x/etc /home/couchdb/3x/data
+#   sudo chown -R 5984:5984 /home/couchdb/3x
+#
+# These are deliberately separate from the 1.7.1 directories
+# (/home/couchdb/{etc,lib,log}). CouchDB 2.0 changed the database file format,
+# so 3.x cannot read the old files: the old data is left untouched on disk and
+# is carried across by replication instead. See ./migrate-couchdb.sh.
+
 services:
   couchdb-config:
-    volumes:
-      - couch-etc:/usr/local/etc/couchdb/
-      - ./couchdb-custom.ini:/tmp/traduxio.ini
     image: alpine
-    command: cp -p /tmp/traduxio.ini /usr/local/etc/couchdb/local.d/
+    volumes:
+      - couch-etc:/opt/couchdb/etc/
+      - ./couchdb-custom.ini:/tmp/traduxio.ini
+    # 3.x lives under /opt/couchdb; the 1.7.1 image was a source build under
+    # /usr/local. local.d/ does not exist yet in a fresh volume.
+    command: sh -c "mkdir -p /opt/couchdb/etc/local.d/ && cp -p /tmp/traduxio.ini /opt/couchdb/etc/local.d/"
+
   couchdb:
-    image: "couchdb:1.7.1"
+    image: "couchdb:3.5.3"
     depends_on:
       couchdb-config:
         condition: service_completed_successfully
     ports:
       - 5984:5984
     volumes:
-      - couch-log:/usr/local/var/log/couchdb/
-      - couch-etc:/usr/local/etc/couchdb/
-      - couch-data:/usr/local/var/lib/couchdb/
+      - couch-etc:/opt/couchdb/etc/
+      - couch-data:/opt/couchdb/data/
+    # Supplies COUCHDB_USER, COUCHDB_PASSWORD and COUCHDB_SECRET. Copy
+    # couchdb-admin.env.default to couchdb-admin.env and edit it.
     env_file: couchdb-admin.env
-    secrets:
-      - couchdb_admin_password
-    # some incompatibiliyt with more modern OS limits
-    # https://github.com/apache/couchdb/discussions/4571#discussioncomment-6047313
-    ulimits:
-      nofile:
-        soft: 2048
-        hard: 4096
-  couchapp:
-    build: couchapp
-    command: couchapp push /app traduxio
+    # No ulimits override: the nofile 2048/4096 workaround the 1.7.1 service
+    # carried was specific to that image's old Erlang. 3.x wants a high nofile.
+
+  couchdb-setup:
+    image: curlimages/curl:8.11.1
     depends_on:
-     couchdb:
-       condition: service_started
+      couchdb:
+        condition: service_started
+    env_file: couchdb-admin.env
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        base="http://$$COUCHDB_USER:$$COUCHDB_PASSWORD@couchdb:5984"
+        echo "waiting for couchdb ..."
+        i=0
+        while [ $$i -lt 60 ]; do
+          curl -fsS "$$base/_up" > /dev/null 2>&1 && break
+          i=$$((i + 1))
+          sleep 2
+        done
+        curl -fsS "$$base/_up" > /dev/null || { echo "couchdb did not come up" >&2; exit 1; }
+        # single_node=true in couchdb-custom.ini creates _users and _replicator.
+        # _global_changes and the application database still need creating: on
+        # 1.7.1 the application database appeared as a side effect of
+        # `couchapp push`, which 3.x no longer allows.
+        for db in _global_changes traduxio; do
+          code=$$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$$base/$$db")
+          case "$$code" in
+            201|202) echo "created $$db" ;;
+            412) echo "$$db already exists" ;;
+            *) echo "FAILED to create $$db (HTTP $$code)" >&2; exit 1 ;;
+          esac
+        done
+        # 3.x creates databases admin-only, so without this every anonymous
+        # visitor gets a 401 and the public site is unreachable. 1.7.1 had
+        # _security = {}; restore exactly that. Writes stay gated by
+        # couchdb/validate_doc_update.js.
+        #
+        # {} rather than an explicit members/admins block on purpose: a
+        # non-empty secObj.admins makes couchdb/lib/traduxio.js call isArray(),
+        # which is defined only in validate_doc_update.js and mustache.js, so
+        # every update handler would throw a ReferenceError.
+        code=$$(curl -s -o /dev/null -w '%{http_code}' -X PUT \
+                  -H 'Content-Type: application/json' \
+                  -d '{}' "$$base/traduxio/_security")
+        case "$$code" in
+          200|201) echo "set traduxio/_security to {}" ;;
+          *) echo "FAILED to set _security (HTTP $$code)" >&2; exit 1 ;;
+        esac
+
+  couchapp:
+    build: couchapp/
+    depends_on:
+      couchdb-setup:
+        condition: service_completed_successfully
+    env_file: couchdb-admin.env
     volumes:
-      - traduxio-code:/app/
-    links:
-      - couchdb
+      # Bind the couchapp source directly. The 1.7.1 service routed this
+      # through a named volume with a relative `device:`, which the local
+      # driver rejects.
+      - ./couchdb:/app
+    entrypoint: ["sh", "-c"]
+    command:
+      - couchapp push /app "http://$$COUCHDB_USER:$$COUCHDB_PASSWORD@couchdb:5984/traduxio"
+
   user-confirm:
     build: node/
     depends_on:
-     couchapp:
-       condition: service_completed_successfully
-    links:
-      - couchdb
-secrets:
-  couchdb_admin_password:
-    file: ./couchdb-admin-password
+      couchapp:
+        condition: service_completed_successfully
+
+  # Acceptance-test runner. Not started by `up`: run it explicitly, and set
+  # the database up first, since this image has no `couchapp` tool.
+  test-runner:
+    build:
+      context: .
+      dockerfile: spec/Dockerfile
+    profiles: ["tools"]
+    env_file: couchdb-admin.env
 
 volumes:
-  couch-log:
-    driver: local
-    driver_opts:
-      type: 'none'
-      o: 'bind'
-      device: '/home/couchdb/log/'
   couch-etc:
     driver: local
     driver_opts:
       type: 'none'
       o: 'bind'
-      device: '/home/couchdb/etc/'
+      device: '/home/couchdb/3x/etc/'
   couch-data:
     driver: local
     driver_opts:
       type: 'none'
       o: 'bind'
-      device: '/home/couchdb/lib/'
-  traduxio-code:
-    driver: local
-    driver_opts:
-      type: 'none'
-      o: 'bind'
-      device: 'couchdb/'
-
+      device: '/home/couchdb/3x/data/'

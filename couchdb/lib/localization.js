@@ -11,8 +11,9 @@ function getPreferredLanguage() {
   var available = "en";
   var required = req.headers["Accept-Language"];
   if (required) {
-    for each (var l in required.split(",")) {
-      var preferred = l.substring(0,2);
+    var languages = required.split(",");
+    for (var i = 0; i < languages.length; i++) {
+      var preferred = languages[i].substring(0,2);
       if (i18n.hasOwnProperty(preferred)) {
         available = preferred;
         break;
