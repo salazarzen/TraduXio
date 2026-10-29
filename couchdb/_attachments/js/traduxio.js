@@ -188,6 +188,11 @@ Traduxio=$.extend({},{
     },
     getSeqNum:function() {
       return $(document.body).data("seq");
+    },
+    // When the server rendered this page. Used to tell activity already on
+    // the page from activity that has arrived since.
+    getRenderedAt:function() {
+      return new Date($(document.body).data("rendered-at"));
     }
   }
 );

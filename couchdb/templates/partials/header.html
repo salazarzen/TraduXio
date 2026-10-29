@@ -30,7 +30,7 @@
   </style>
   <![endif]-->
 </head>
-<body {{#name}}id="{{name}}"{{/name}} data-prefix="{{prefix}}" data-query="{{query}}" {{#seq}}data-seq="{{seq}}"{{/seq}}>
+<body {{#name}}id="{{name}}"{{/name}} data-prefix="{{prefix}}" data-query="{{query}}" {{#seq}}data-seq="{{seq}}"{{/seq}}{{#renderedAt}} data-rendered-at="{{renderedAt}}"{{/renderedAt}}>
   <div id="body">
     <div id="header" class="group">
       {{#i18n}}

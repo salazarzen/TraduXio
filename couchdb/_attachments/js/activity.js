@@ -169,7 +169,12 @@
   };
 
   function receivedActivity(activity) {
-    if (activity.seq && activity.seq < Traduxio.getSeqNum()) {
+    // Compare timestamps, not sequences: update_seq is an opaque string on
+    // CouchDB 2.0+ and cannot be ordered. Both sides come from the server
+    // clock, so client skew does not matter.
+    var renderedAt=Traduxio.getRenderedAt();
+    if (activity.when && !isNaN(renderedAt)
+        && new Date(activity.when) < renderedAt) {
       activity.isPast=true;
     }
     var user;

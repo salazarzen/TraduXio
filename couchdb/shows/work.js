@@ -46,6 +46,10 @@ function(o, req) {
   }
   if (Traduxio.canAccess(o) && (!newWork || Traduxio.canEdit(o))) {
     data.seq=req.info.update_seq;
+    // The longpoll in _attachments/js/activity.js needs CouchDB's own seq
+    // above, opaque string or not. renderedAt is what the client compares
+    // activity timestamps against, since the seq cannot be ordered.
+    data.renderedAt=(new Date()).toISOString();
     data.work_title=o.title;
     data.display_work_title=o.title?o.title:i18n["i_no_title"];
     data.work_creator=o.creator;

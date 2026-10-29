@@ -385,7 +385,10 @@ Traduxio= {
     if (typeof active == "undefined") active=true;
     var activity=data || {};
     activity.when = activity.when || new Date();
-    activity.seq = this.req.info.update_seq;
+    // No seq is recorded. On CouchDB 2.0+ req.info.update_seq is an opaque
+    // string, so it can neither be ordered nor decremented. Ordering is by
+    // `when` (see compareActivities); the client tells new activity from old
+    // by comparing `when` against the page's data-rendered-at.
     if (!activity.author) {
       var user=this.getUser();
       activity.author=user.name;
@@ -401,10 +404,6 @@ Traduxio= {
     for (var i in activityList) {
       var activity=activityList[i];
       activity.when=new Date(activity.when);
-      activity.seq=activity.seq || this.req.info.update_seq;
-      if (!activity.seq || activity.seq > this.req.info.update_seq) {
-        activity.seq=this.req.info.update_seq-1;
-      }
     }
   },
 
